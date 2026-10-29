@@ -74,6 +74,14 @@ packages. Three content settings matter for a game whose state is shared:
   process alive.
 - Set `FISHERY_ADMIN_KEY` as a secret environment variable.
 
+**A push redeploys the app, and a redeploy empties its database.** Connect
+Cloud republishes on every push to the connected branch, and the SQLite file
+lives in the container, which a new build replaces: on 2026-10-29 a push at
+12:53 left History reading "No sessions yet" at 12:59. So push before creating
+an evening's session or after its debrief, never between; a worker idle
+within one build kept its state in an 80-second test. The free plan deploys
+from public repositories only, which is why this one is public.
+
 Regenerate the manifest after changing the packages the app uses:
 
 ```r
