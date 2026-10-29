@@ -6,7 +6,7 @@
 
 # --- session lifecycle --------------------------------------------------------
 
-fl_create_session <- function(con, label = NULL, n_rounds = 11, n_pools = 2,
+fl_create_session <- function(con, label = NULL, n_rounds = 11, n_pools = 1,
                               max_harvest = 20, fish_per_player = 10, growth = 2,
                               show_rounds = TRUE, prize_threshold = 45,
                               round_seconds = 0, auto_advance = FALSE) {

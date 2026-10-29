@@ -22,7 +22,8 @@ MIT licence. The game logic is new.
   provided at least one fish per player remains. Below that the pool collapses
   and that pool's game is over.
 - The game runs a set number of rounds (11 by default) or until every pool has
-  collapsed. Players are dealt into pools at random when the instructor presses
+  collapsed. By default the whole class fishes one pool; with more than one,
+  players are dealt into the pools at random when the instructor presses
   Start. A player's payoff is their total catch; the admin screen marks who
   reached the prize threshold (45 by default).
 

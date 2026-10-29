@@ -247,7 +247,7 @@ ad_create <- function(ns) shiny::div(class = "card",
   shiny::div(class = "card-body",
     shiny::textInput(ns("new_label"), "Label (optional)", placeholder = "e.g. Section 002, Oct 29"),
     shiny::fluidRow(
-      shiny::column(3, shiny::numericInput(ns("new_pools"), "Pools", value = 2, min = 1, step = 1)),
+      shiny::column(3, shiny::numericInput(ns("new_pools"), "Pools", value = 1, min = 1, step = 1)),
       shiny::column(3, shiny::numericInput(ns("new_rounds"), "Rounds", value = 11, min = 1, step = 1)),
       shiny::column(3, shiny::numericInput(ns("new_max"), "Max harvest per round", value = 20, min = 1, step = 1)),
       shiny::column(3, shiny::numericInput(ns("new_fpp"), "Starting fish per player", value = 10, min = 1, step = 1))),
