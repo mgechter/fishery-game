@@ -3,7 +3,7 @@
 
 admin_ui <- function(id) {
   ns <- shiny::NS(id)
-  shiny::div(class = "fg-wide", shiny::uiOutput(ns("screen")))
+  shiny::div(class = "fg-wide", shiny::uiOutput(ns("screen")), shiny::uiOutput(ns("proxy")))
 }
 
 admin_server <- function(id, con) shiny::moduleServer(id, function(input, output, session) {
@@ -75,6 +75,34 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
   })
 
   shiny::observeEvent(input$newsession, fl_clear_active(con))
+
+  # Enter an ask on a player's behalf (phone trouble). Its inputs live outside
+  # the main screen and re-render only when the round or the roster changes,
+  # so a student's submission cannot wipe what the instructor is typing.
+  proxy_key <- shiny::reactiveVal("")
+  shiny::observe({
+    st <- state()
+    k <- if (is.null(st)) "none" else
+      paste(st$session$session_id, st$session$phase, st$session$current_round, nrow(st$players))
+    if (!identical(k, shiny::isolate(proxy_key()))) proxy_key(k)
+  })
+  output$proxy <- shiny::renderUI({
+    proxy_key()
+    st <- shiny::isolate(state())
+    if (is.null(st) || st$session$phase != "open" || !identical(view_rv(), "run")) return(NULL)
+    ad_proxy(ns, st)
+  })
+  shiny::observeEvent(input$proxy_submit, {
+    st <- state(); shiny::req(st, st$session$phase == "open")
+    pid <- suppressWarnings(as.integer(input$proxy_player))
+    if (is.na(pid)) { shiny::showNotification("Pick a player.", type = "error"); return() }
+    guard({
+      fl_submit(con, sid(), pid, st$session$current_round, input$proxy_harvest, confirm = TRUE)
+      who <- st$players$display_name[st$players$player_id == pid]
+      shiny::showNotification(sprintf("Entered %s for %s.", fmt_fish(input$proxy_harvest), who),
+                              type = "message", duration = 3)
+    })
+  })
 
   output$dl <- shiny::downloadHandler(
     filename = function() sprintf("fishery_session_%s.csv", sid() %||% "x"),
@@ -363,6 +391,28 @@ ad_round <- function(ns, st, phase, carry = FALSE) {
       shiny::span(style = "margin-left:1rem;", shiny::downloadButton(ns("dl"), "Export CSV")),
       shiny::hr(),
       shiny::actionButton(ns("reset"), "Reset game to the lobby…", class = "btn btn-link text-danger")))
+}
+
+ad_proxy <- function(ns, st) {
+  s <- st$session
+  pl <- st$players[!is.na(st$players$pool_id), , drop = FALSE]
+  alive <- st$pools$pool_id[is.na(st$pools$collapsed_round) | st$pools$collapsed_round >= s$current_round]
+  pl <- pl[pl$pool_id %in% alive, , drop = FALSE]
+  pl <- pl[order(pl$display_name), , drop = FALSE]
+  if (nrow(pl) == 0) return(NULL)
+  choices <- c("Pick a player…" = "", stats::setNames(pl$player_id, pl$display_name))
+  shiny::div(class = "card",
+    shiny::div(class = "card-header", "Enter an ask for a player whose phone isn't cooperating"),
+    shiny::div(class = "card-body",
+      shiny::fluidRow(
+        shiny::column(5, shiny::selectInput(ns("proxy_player"), "Player", choices = choices,
+                                            selectize = FALSE)),
+        shiny::column(3, shiny::numericInput(ns("proxy_harvest"),
+          sprintf("Ask (0 to %d)", s$max_harvest), value = NULL, min = 0, max = s$max_harvest, step = 1)),
+        shiny::column(4, shiny::div(style = "margin-top:1.9rem;",
+          shiny::actionButton(ns("proxy_submit"), "Enter for them", class = "btn btn-outline-secondary")))),
+      shiny::p(class = "fg-muted", style = "font-size:.9rem;margin-bottom:0;",
+        "Counts as their submission for this round; they can still change it from their own phone.")))
 }
 
 ad_leaderboard_table <- function(st) {
