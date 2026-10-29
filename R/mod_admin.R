@@ -259,13 +259,15 @@ ad_create <- function(ns) shiny::div(class = "card",
       shiny::column(3, shiny::div(style = "margin-top:1.9rem;",
         shiny::checkboxInput(ns("new_show"), "Players see how many rounds there are", TRUE)))),
     shiny::p(class = "fg-muted", style = "font-size:.9rem;",
-      "Players are dealt into the pools at random when you press Start. A pool starts with ",
+      "With more than one pool, players are dealt into them at random when you press Start. A pool starts with ",
       "(starting fish per player) × (players in it) fish, which is also its cap; survivors double ",
       "each round; below one fish per player the pool collapses."),
     shiny::actionButton(ns("create"), "Create session", class = "btn btn-primary"),
     shiny::p(class = "fg-muted", style = "margin-top:.75rem;",
       "Projector view: add ", shiny::tags$code("?mode=display"), " to the URL. ",
-      "Sessions are kept: see History.")))
+      "History lists this server's sessions until the app restarts: a redeploy, or some minutes ",
+      "with no page open, empties it. So create the session in class, keep a tab open until the ",
+      "debrief, and press Export CSV before closing it.")))
 
 ad_history <- function(ns, sess) {
   if (nrow(sess) == 0)

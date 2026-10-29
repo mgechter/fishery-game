@@ -51,7 +51,8 @@ bslib, DBI, RSQLite and ggplot2 (plus testthat for the tests).
 2. Put the projector URL on the screen and give students the student URL.
    Each student enters a name and lands in the lobby. Their identity is kept
    in the URL (`?t=…`), so a reload resumes them.
-3. Press **Start game**. Students are dealt into pools and round 1 opens.
+3. Press **Start game**. Students go into the pool, or are dealt into the
+   pools at random when there are several, and round 1 opens.
 4. Each round: students type an ask (it saves as they type) and press Submit.
    The admin screen shows who is in. Press **Close and score the round**, then
    **Next round**. Someone who entered nothing is scored as asking for 0; the
@@ -79,8 +80,11 @@ packages. Three content settings matter for a game whose state is shared:
 Cloud republishes on every push to the connected branch, and the SQLite file
 lives in the container, which a new build replaces: on 2026-10-29 a push at
 12:53 left History reading "No sessions yet" at 12:59. So push before creating
-an evening's session or after its debrief, never between; a worker idle
-within one build kept its state in an 80-second test. The free plan deploys
+an evening's session or after its debrief, never between. Idle time empties
+it too: the same day a session created at 13:37 with no page open was gone by
+13:50, with no push in between, while one left 80 seconds without a page kept
+its state. So create the session in class, keep a tab open until the
+debrief, and press **Export CSV** before closing it. The free plan deploys
 from public repositories only, which is why this one is public.
 
 Regenerate the manifest after changing the packages the app uses:
