@@ -35,7 +35,8 @@ display_server <- function(id, con) shiny::moduleServer(id, function(input, outp
   shiny::observe({
     st <- state()
     k <- if (is.null(st)) "none" else
-      paste(st$session$session_id, st$session$phase, st$session$current_round, nrow(st$pool_rounds))
+      paste(st$session$session_id, st$session$phase, st$session$current_round, nrow(st$pool_rounds),
+            if (nrow(st$pool_rounds)) sprintf("%.6f", max(st$pool_rounds$computed_at)) else 0)
     if (!identical(k, shiny::isolate(chart_key()))) chart_key(k)
   })
   chart_state <- shiny::reactive({ chart_key(); shiny::isolate(state()) })

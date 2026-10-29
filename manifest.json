@@ -1394,22 +1394,22 @@
       "checksum": "b37f13cc0823afa5999378cb27d49aff"
     },
     "R/db.R": {
-      "checksum": "f5375f1088a47c87a4a75e5664703015"
+      "checksum": "273f33ad0815886924e957b8a33d675e"
     },
     "R/engine.R": {
       "checksum": "89f5a873815462575accb40e135a4696"
     },
     "R/game_logic.R": {
-      "checksum": "12d12f3a8a77a1c2902c2f06044dd22b"
+      "checksum": "1de88e412549906f2b7d3c44ab006b67"
     },
     "R/mod_admin.R": {
-      "checksum": "3fa93e0784128988b3a13449d984e576"
+      "checksum": "fc779e7d00887638939cb0daca8efe21"
     },
     "R/mod_display.R": {
-      "checksum": "72ec531ca5a03ab7fc0c648b5fe3c1a6"
+      "checksum": "0a7a1ab467f7fdc73b4107ba257f50d7"
     },
     "R/mod_player.R": {
-      "checksum": "e53ec392df853b334adc12c284f7762a"
+      "checksum": "588aaba4621c5e063534636a6a67a0ad"
     },
     "R/plots.R": {
       "checksum": "ee94885ddc4c69be5b4005c0c14a8401"

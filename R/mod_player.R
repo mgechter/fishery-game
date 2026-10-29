@@ -82,12 +82,23 @@ player_server <- function(id, con) shiny::moduleServer(id, function(input, outpu
   })
 
   # Auto-save the box as they type (debounced) so a typed-but-unsent number is
-  # never scored as a no-show. Does not confirm.
-  draft <- shiny::debounce(shiny::reactive(input$harvest), 900)
+  # never scored as a no-show. Does not confirm. Each keystroke is recorded with
+  # the round it was typed in, so a draft that fires after the round closed is
+  # dropped rather than landing in the next round.
+  typed <- shiny::reactiveVal(NULL)
+  shiny::observeEvent(input$harvest, {
+    st <- shiny::isolate(state())
+    typed(list(h = input$harvest,
+               round = if (is.null(st)) NA_integer_ else as.integer(st$session$current_round),
+               sid   = if (is.null(st)) NA_integer_ else as.integer(st$session$session_id)))
+  }, ignoreInit = TRUE, ignoreNULL = FALSE)
+  draft <- shiny::debounce(shiny::reactive(typed()), 900)
   shiny::observeEvent(draft(), {
-    st <- state(); pl <- me()
-    if (is.null(st) || is.null(pl) || st$session$phase != "open") return()
-    h <- suppressWarnings(as.numeric(draft()))
+    dd <- draft(); st <- state(); pl <- me()
+    if (is.null(dd) || is.null(st) || is.null(pl) || st$session$phase != "open") return()
+    if (!identical(dd$round, as.integer(st$session$current_round)) ||
+        !identical(dd$sid, as.integer(st$session$session_id))) return()
+    h <- suppressWarnings(as.numeric(dd$h))
     if (length(h) != 1 || is.na(h) || h < 0 || h > st$session$max_harvest || h != floor(h)) return()
     sub <- shiny::isolate(my_submission())
     if (!is.null(sub) && isTRUE(sub$harvest[1] == h)) return()

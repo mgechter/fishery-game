@@ -83,10 +83,22 @@ rsconnect::writeManifest(appPrimaryDoc = "app.R")
 ## Testing
 
 ```sh
-Rscript scripts/run_tests.R                 # engine and game loop, headless
+Rscript scripts/run_tests.R                 # engine, game loop and module observers, headless
 Rscript scripts/run_app.R                   # terminal 1
 Rscript scripts/playtest_bot.R              # terminal 2: ten bots join and play
 ```
 
 Start the bot before pressing Start in the instructor view. Keep a play-test
 off real data by giving both the same scratch file, `FISHERY_DB=data/playtest.sqlite`.
+
+`tests/testthat/test-adversarial.R` is an adversarial audit written by OpenAI
+Codex on 2026-10-29 (its report: `docs/codex-adversarial-report-2026-10-29.md`).
+Ten of its eleven defect blocks failed on the first version and pass since the
+fixes of the same day: a stale instructor tab can no longer score or advance a
+round it has not seen, the reset dialog resets only the session it was opened
+for, the timer reads the live session row rather than the poll's copy, Start is
+one transaction, a draft typed in one round cannot land in the next, the no-show
+policy is stored with the session, and the state stamp and the projector's chart
+key notice a re-score, a reset and restart, and two writes within a millisecond.
+The eleventh, the countdown scoring with only the projector connected, is a
+design choice and is skipped: the instructor tab scores the timer.

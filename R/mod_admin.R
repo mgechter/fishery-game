@@ -20,11 +20,17 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
     })
 
   sid <- function() state()$session$session_id
-  carry_rv <- shiny::reactiveVal(FALSE)   # persists across screen re-renders
-  shiny::observeEvent(input$carry, carry_rv(isTRUE(input$carry)), ignoreInit = TRUE)
 
   guard <- function(expr) tryCatch(expr, error = function(e)
     shiny::showNotification(conditionMessage(e), type = "error"))
+
+  # The no-show policy is stored in the session row (fl_set_carry), so it is
+  # the same in every instructor tab and for the timer, and survives a reload.
+  shiny::observeEvent(input$carry, {
+    st <- state(); if (is.null(st)) return()
+    if (!identical(isTRUE(input$carry), isTRUE((st$session$carry_forward %||% 0) == 1)))
+      guard(fl_set_carry(con, sid(), input$carry))
+  }, ignoreInit = TRUE)
 
   shiny::observeEvent(input$create, {
     guard(fl_create_session(con,
@@ -43,8 +49,11 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
     })
   })
 
-  score_now <- function(carry) {
-    r <- tryCatch(fl_score_round(con, sid(), carry_forward = carry), error = function(e) e)
+  # `expect_round` is the round this tab is showing: a Close pressed after
+  # another tab moved the game on is refused rather than scoring the new round.
+  score_now <- function(carry, expect_round) {
+    r <- tryCatch(fl_score_round(con, sid(), carry_forward = carry, expect_round = expect_round),
+                  error = function(e) e)
     if (inherits(r, "error")) { shiny::showNotification(conditionMessage(r), type = "error"); return() }
     msg <- sprintf("Scored %d pool(s).", r$pools_scored)
     if (length(r$collapsed)) msg <- paste(msg, sprintf("Collapsed: %s.", paste(r$collapsed, collapse = ", ")))
@@ -54,12 +63,17 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
     shiny::showNotification(msg, type = if (length(r$no_shows)) "warning" else "message",
                             duration = if (length(r$no_shows)) 9 else 4)
   }
-  shiny::observeEvent(input$score,      { st <- state(); shiny::req(st); score_now(carry_rv()) })
-  shiny::observeEvent(input$rescore_cf, { st <- state(); shiny::req(st); score_now(TRUE) })
-  shiny::observeEvent(input$advance,    { st <- state(); shiny::req(st); guard(fl_advance_round(con, sid())) })
+  shiny::observeEvent(input$score,      { st <- state(); shiny::req(st); score_now(NULL, st$session$current_round) })
+  shiny::observeEvent(input$rescore_cf, { st <- state(); shiny::req(st); score_now(TRUE, st$session$current_round) })
+  shiny::observeEvent(input$advance,    { st <- state(); shiny::req(st)
+    guard(fl_advance_round(con, sid(), expect_round = st$session$current_round)) })
 
+  # The reset dialog remembers which session it was opened for; a confirmation
+  # after another tab activated a different session resets nothing.
+  reset_target <- shiny::reactiveVal(NULL)
   shiny::observeEvent(input$reset, {
     st <- state(); shiny::req(st)
+    reset_target(st$session$session_id)
     shiny::showModal(shiny::modalDialog(
       title = "Reset this game to the lobby?",
       shiny::p("This deletes every ask and result in this session. The player list is kept, ",
@@ -69,8 +83,14 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
                             class = "btn btn-danger"))))
   })
   shiny::observeEvent(input$reset_ok, {
-    st <- state(); shiny::req(st)
-    guard({ fl_reset_to_lobby(con, sid()); shiny::showNotification("Back in the lobby.", type = "message") })
+    target <- reset_target(); live <- fl_active_session(con)
+    if (is.null(target) || is.null(live) || !identical(as.integer(live$session_id), as.integer(target))) {
+      shiny::showNotification("The active session changed while the dialog was open; nothing was reset.",
+                              type = "warning", duration = 6)
+    } else {
+      guard({ fl_reset_to_lobby(con, target); shiny::showNotification("Back in the lobby.", type = "message") })
+    }
+    reset_target(NULL)
     shiny::removeModal()
   })
 
@@ -169,17 +189,22 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
     guard(fl_set_timer(con, sid(), input$timer_now %||% 0, auto_advance = isTRUE(input$auto_now)))
   }, ignoreInit = TRUE)
 
-  last_auto <- shiny::reactiveVal(-1L)
+  # The timer reads the live session row, never the poll's copy, so a round the
+  # instructor closed by hand a moment ago cannot be scored again as the next
+  # one; the latch is keyed by round and its start time, so a reset and restart
+  # time round 1 afresh.
+  last_auto <- shiny::reactiveVal("")
   shiny::observe({
     shiny::invalidateLater(1000)
     st <- shiny::isolate(state()); if (is.null(st)) return()
-    s <- st$session
-    if (fl_should_auto_score(s) && last_auto() != s$current_round) {
-      last_auto(s$current_round)
+    s <- fl_session(con, st$session$session_id); if (is.null(s)) return()
+    key <- paste(s$session_id, s$current_round, sprintf("%.6f", s$round_started_at %||% 0))
+    if (fl_should_auto_score(s) && last_auto() != key) {
+      last_auto(key)
       guard({
-        fl_score_round(con, sid(), carry_forward = carry_rv())
+        fl_score_round(con, s$session_id, expect_round = s$current_round)
         if (isTRUE((s$auto_advance %||% 0) == 1)) {
-          fl_advance_round(con, sid())
+          fl_advance_round(con, s$session_id, expect_round = s$current_round)
           shiny::showNotification(sprintf("Timer expired: round %d scored, moving on.", s$current_round),
                                   type = "message")
         } else {
@@ -199,8 +224,8 @@ admin_server <- function(id, con) shiny::moduleServer(id, function(input, output
     body <- if (is.null(st)) ad_create(ns)
       else switch(st$session$phase,
         lobby    = ad_lobby(ns, st, base_url(session)),
-        open     = ad_round(ns, st, "open", carry_rv()),
-        scored   = ad_round(ns, st, "scored", carry_rv()),
+        open     = ad_round(ns, st, "open"),
+        scored   = ad_round(ns, st, "scored"),
         finished = ad_finished(ns, st),
         ad_create(ns))
     shiny::tagList(nav, body)
@@ -347,8 +372,9 @@ ad_player_table <- function(st) {
     check.names = FALSE, stringsAsFactors = FALSE)
 }
 
-ad_round <- function(ns, st, phase, carry = FALSE) {
+ad_round <- function(ns, st, phase) {
   s <- st$session; rs <- st$round_status
+  carry <- isTRUE((s$carry_forward %||% 0) == 1)
   timer_row <- shiny::fluidRow(
     shiny::column(6, shiny::div(style = "text-align:center;", shiny::uiOutput(ns("round_timer")))),
     shiny::column(6,

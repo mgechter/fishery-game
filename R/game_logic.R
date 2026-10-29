@@ -129,22 +129,26 @@ fl_start_game <- function(con, session_id, seed = NULL) {
   pl <- fl_players(con, session_id)
   if (nrow(pl) < 1) stop("nobody has joined yet", call. = FALSE)
   asg <- assign_pools(pl$player_id, s$n_pools, seed = seed)
-  for (i in seq_len(nrow(asg)))
-    db_run(con, "UPDATE players SET pool_id = ? WHERE player_id = ?",
-           list(asg$pool_id[i], asg$player_id[i]))
   n_pools <- max(asg$pool_id)
-  for (k in seq_len(n_pools)) {
-    n <- sum(asg$pool_id == k)
-    start <- s$fish_per_player * n
+  # One transaction: a worker lost halfway leaves the lobby as it was, so Start
+  # can be pressed again instead of failing on half-dealt pools.
+  DBI::dbWithTransaction(con, {
+    for (i in seq_len(nrow(asg)))
+      db_run(con, "UPDATE players SET pool_id = ? WHERE player_id = ?",
+             list(asg$pool_id[i], asg$player_id[i]))
+    for (k in seq_len(n_pools)) {
+      n <- sum(asg$pool_id == k)
+      start <- s$fish_per_player * n
+      db_run(con,
+        "INSERT INTO pools (session_id, pool_id, n_players, start_stock, stock, collapsed_round)
+         VALUES (?, ?, ?, ?, ?, NULL)",
+        list(session_id, k, n, start, start))
+    }
     db_run(con,
-      "INSERT INTO pools (session_id, pool_id, n_players, start_stock, stock, collapsed_round)
-       VALUES (?, ?, ?, ?, ?, NULL)",
-      list(session_id, k, n, start, start))
-  }
-  db_run(con,
-    "UPDATE sessions SET n_pools = ?, phase = 'open', current_round = 1, round_started_at = ?
-     WHERE session_id = ?",
-    list(n_pools, now_epoch(), session_id))
+      "UPDATE sessions SET n_pools = ?, phase = 'open', current_round = 1, round_started_at = ?
+       WHERE session_id = ?",
+      list(n_pools, now_epoch(), session_id))
+  })
   invisible(list(n_pools = n_pools))
 }
 
@@ -158,6 +162,14 @@ fl_set_timer <- function(con, session_id, seconds, auto_advance = NULL) {
   if (!is.null(auto_advance))
     db_run(con, "UPDATE sessions SET auto_advance = ? WHERE session_id = ?",
            list(as.integer(isTRUE(auto_advance)), session_id))
+  invisible(TRUE)
+}
+
+# The no-show policy lives in the session row, so every instructor tab and the
+# timer score the same way.
+fl_set_carry <- function(con, session_id, carry_forward) {
+  db_run(con, "UPDATE sessions SET carry_forward = ? WHERE session_id = ?",
+         list(as.integer(isTRUE(carry_forward)), session_id))
   invisible(TRUE)
 }
 
@@ -283,12 +295,18 @@ fl_round_status <- function(con, session_id) {
 }
 
 # Score the current round for every pool still alive. A missing ask counts as 0
-# unless carry_forward reuses the player's previous ask. Scoring again in the
-# same round (phase 'scored') recomputes from the stock the round started with.
-fl_score_round <- function(con, session_id, carry_forward = FALSE) {
+# unless carry_forward (the session's setting when NULL) reuses the player's
+# previous ask. Scoring again in the same round (phase 'scored') recomputes from
+# the stock the round started with. `expect_round` refuses to score any round
+# but the one the caller was looking at, so a stale instructor tab cannot score
+# a round it has not seen.
+fl_score_round <- function(con, session_id, carry_forward = NULL, expect_round = NULL) {
   s <- fl_session(con, session_id)
   if (is.null(s)) stop("no such session", call. = FALSE)
   if (!s$phase %in% c("open", "scored")) stop("no round is open", call. = FALSE)
+  if (!is.null(expect_round) && s$current_round != expect_round)
+    stop(sprintf("the round moved on: the game is on round %d", s$current_round), call. = FALSE)
+  if (is.null(carry_forward)) carry_forward <- isTRUE((s$carry_forward %||% 0) == 1)
   rnd <- s$current_round
   pools <- fl_pools(con, session_id)
   no_shows <- character(0); scored <- 0L; collapsed_now <- character(0)
@@ -335,10 +353,12 @@ fl_score_round <- function(con, session_id, carry_forward = FALSE) {
   invisible(list(pools_scored = scored, no_shows = unique(no_shows), collapsed = collapsed_now))
 }
 
-fl_advance_round <- function(con, session_id) {
+fl_advance_round <- function(con, session_id, expect_round = NULL) {
   s <- fl_session(con, session_id)
   if (is.null(s)) stop("no such session", call. = FALSE)
   if (s$phase != "scored") stop("score the round first", call. = FALSE)
+  if (!is.null(expect_round) && s$current_round != expect_round)
+    stop(sprintf("the round moved on: the game is on round %d", s$current_round), call. = FALSE)
   alive <- db_query(con,
     "SELECT COUNT(*) AS n FROM pools WHERE session_id = ? AND collapsed_round IS NULL",
     list(session_id))$n
@@ -368,9 +388,12 @@ fl_state_stamp <- function(con, session_id) {
   res <- db_query(con,
     "SELECT COUNT(*) n, COALESCE(MAX(computed_at), 0) t FROM results WHERE session_id = ?",
     list(session_id))
+  # round_started_at makes a reset-and-restart between two polls visible; the
+  # six-decimal times keep two writes within a millisecond apart.
   paste(s$phase, s$current_round, n_pl,
-        sub$n, sprintf("%.3f", sub$t), res$n, sprintf("%.3f", res$t),
-        s$round_seconds %||% 0, s$auto_advance %||% 0, sep = "|")
+        sub$n, sprintf("%.6f", sub$t), res$n, sprintf("%.6f", res$t),
+        s$round_seconds %||% 0, s$auto_advance %||% 0, s$carry_forward %||% 0,
+        sprintf("%.6f", s$round_started_at %||% 0), sep = "|")
 }
 
 fl_load_state <- function(con, session_id) {

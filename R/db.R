@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   round_started_at REAL,
   round_seconds    INTEGER NOT NULL DEFAULT 0,         -- countdown length, 0 = no timer
   auto_advance     INTEGER NOT NULL DEFAULT 0,         -- also open the next round after an auto-score
+  carry_forward    INTEGER NOT NULL DEFAULT 0,         -- a no-show reuses last round's ask (1) or asks 0 (0)
   created_at       REAL    NOT NULL
 );
 CREATE TABLE IF NOT EXISTS players (
@@ -93,10 +94,18 @@ db_connect <- function(path) {
   con
 }
 
+# Columns added after the first release, applied to a database created before them.
+DB_MIGRATIONS <- c(
+  "ALTER TABLE sessions ADD COLUMN carry_forward INTEGER NOT NULL DEFAULT 0"
+)
+
 db_init <- function(con) {
   for (stmt in strsplit(DB_SCHEMA, ";\\s*\n")[[1]]) {
     stmt <- trimws(stmt)
     if (nzchar(stmt)) DBI::dbExecute(con, stmt)
+  }
+  for (stmt in DB_MIGRATIONS) {
+    tryCatch(DBI::dbExecute(con, stmt), error = function(e) NULL)  # already applied
   }
   db_checkpoint(con)
   invisible(TRUE)
